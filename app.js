@@ -36,10 +36,15 @@ const contractAddressInput = document.getElementById('contractAddress');
 const recipientAddressInput = document.getElementById('recipientAddress');
 const amountInput = document.getElementById('amount');
 const ethValueInput = document.getElementById('ethValue');
+const tokenDecimalsSelect = document.getElementById('tokenDecimals');
+const customDecimalsInput = document.getElementById('customDecimals');
 const statusDiv = document.getElementById('status');
 const txInfo = document.getElementById('txInfo');
 const txHash = document.getElementById('txHash');
 const txStatus = document.getElementById('txStatus');
+const contractInfo = document.getElementById('contractInfo');
+const contractBalance = document.getElementById('contractBalance');
+const checkContractBtn = document.getElementById('checkContract');
 
 // Network names mapping
 const networkNames = {
@@ -112,6 +117,42 @@ function handleAccountsChanged(accounts) {
     }
 }
 
+// Check contract balance and info
+async function checkContract() {
+    try {
+        const contractAddress = contractAddressInput.value.trim();
+        
+        if (!ethers.utils.isAddress(contractAddress)) {
+            showStatus('Please enter a valid contract address first', 'error');
+            return;
+        }
+        
+        showStatus('Checking contract...', 'info');
+        
+        // Get contract balance
+        const balance = await provider.getBalance(contractAddress);
+        const balanceInEth = ethers.utils.formatEther(balance);
+        
+        contractBalance.textContent = `${balanceInEth} ETH`;
+        contractInfo.classList.remove('hidden');
+        
+        // Check if it's a contract
+        const code = await provider.getCode(contractAddress);
+        if (code === '0x') {
+            showStatus('Warning: This address is not a smart contract!', 'error');
+        } else {
+            showStatus('Contract verified', 'success');
+            
+            // Try to get more info about the contract
+            console.log('Contract bytecode length:', code.length);
+        }
+        
+    } catch (error) {
+        console.error('Error checking contract:', error);
+        showStatus(`Error checking contract: ${error.message}`, 'error');
+    }
+}
+
 // Transfer funds function
 async function transferFunds(e) {
     e.preventDefault();
@@ -120,8 +161,20 @@ async function transferFunds(e) {
         // Get form values
         const contractAddress = contractAddressInput.value.trim();
         const recipientAddress = recipientAddressInput.value.trim();
-        const amountInEth = amountInput.value;
+        const amountValue = amountInput.value;
         const ethValueInEth = ethValueInput.value || '0';
+        
+        // Get token decimals
+        let decimals;
+        if (tokenDecimalsSelect.value === 'custom') {
+            decimals = parseInt(customDecimalsInput.value);
+            if (isNaN(decimals) || decimals < 0 || decimals > 18) {
+                showStatus('Invalid custom decimals value', 'error');
+                return;
+            }
+        } else {
+            decimals = parseInt(tokenDecimalsSelect.value);
+        }
 
         // Validate addresses
         if (!ethers.utils.isAddress(contractAddress)) {
@@ -134,9 +187,11 @@ async function transferFunds(e) {
             return;
         }
 
-        // Convert ETH to Wei
-        const amountInWei = ethers.utils.parseEther(amountInEth);
+        // Convert amount based on token decimals
+        const amountInSmallestUnit = ethers.utils.parseUnits(amountValue, decimals);
         const ethValueInWei = ethers.utils.parseEther(ethValueInEth);
+        
+        console.log(`Converting ${amountValue} with ${decimals} decimals to ${amountInSmallestUnit.toString()}`);
 
         // Create contract instance
         contract = new ethers.Contract(contractAddress, FUND_MANAGER_ABI, signer);
@@ -153,7 +208,7 @@ async function transferFunds(e) {
         try {
             const gasEstimate = await contract.estimateGas.transferFunds(
                 recipientAddress,
-                amountInWei,
+                amountInSmallestUnit,
                 txOptions
             );
             console.log('Gas estimate:', gasEstimate.toString());
@@ -166,7 +221,7 @@ async function transferFunds(e) {
             txOptions.gasLimit = 300000; // Manual gas limit
             
             try {
-                const tx = await contract.transferFunds(recipientAddress, amountInWei, txOptions);
+                const tx = await contract.transferFunds(recipientAddress, amountInSmallestUnit, txOptions);
                 await handleTransaction(tx);
                 return;
             } catch (manualError) {
@@ -175,7 +230,7 @@ async function transferFunds(e) {
         }
 
         // Call transferFunds function
-        const tx = await contract.transferFunds(recipientAddress, amountInWei, txOptions);
+        const tx = await contract.transferFunds(recipientAddress, amountInSmallestUnit, txOptions);
         await handleTransaction(tx);
 
 
@@ -193,11 +248,13 @@ async function transferFunds(e) {
             // Show additional help for common revert reasons
             const helpMessage = `
                 <br><br>
-                <strong>Common causes:</strong><br>
-                • The contract doesn't have enough funds<br>
+                <strong>Common causes for USDC transfers:</strong><br>
+                • The contract doesn't have enough USDC balance<br>
                 • You don't have permission to call this function<br>
                 • The function might be paused or disabled<br>
-                • The function might require ETH to be sent with it
+                • Wrong decimal places (USDC uses 6 decimals, not 18)<br>
+                • The contract needs approval to spend USDC (usually set by owner)<br>
+                • The recipient might be blacklisted on USDC contract
             `;
             statusDiv.innerHTML = statusDiv.textContent + helpMessage;
         } else {
@@ -217,15 +274,43 @@ async function handleTransaction(tx) {
     txStatus.textContent = 'Pending...';
     txInfo.classList.remove('hidden');
 
-    // Wait for transaction confirmation
-    const receipt = await tx.wait();
+    try {
+        // Wait for transaction confirmation
+        const receipt = await tx.wait();
 
-    if (receipt.status === 1) {
-        txStatus.textContent = 'Confirmed ✓';
-        showStatus('Transaction successful!', 'success');
-    } else {
-        txStatus.textContent = 'Failed ✗';
-        showStatus('Transaction failed!', 'error');
+        if (receipt.status === 1) {
+            txStatus.textContent = 'Confirmed ✓';
+            showStatus('Transaction successful!', 'success');
+        } else {
+            txStatus.textContent = 'Failed ✗';
+            showStatus('Transaction failed! The transaction was mined but execution failed.', 'error');
+            
+            // Provide detailed failure information
+            const failureInfo = `
+                <br><br>
+                <strong>Transaction failed on-chain. Possible reasons:</strong><br>
+                • The contract doesn't have enough balance to transfer<br>
+                • You don't have the required role/permission<br>
+                • The recipient address might be blacklisted<br>
+                • The contract might be paused<br>
+                • The amount exceeds allowed limits<br>
+                <br>
+                <strong>Debug Info:</strong><br>
+                • Gas Used: ${receipt.gasUsed.toString()}<br>
+                • Block: ${receipt.blockNumber}<br>
+                • <a href="${explorerUrl}" target="_blank">View on Explorer</a>
+            `;
+            statusDiv.innerHTML = statusDiv.textContent + failureInfo;
+        }
+    } catch (error) {
+        console.error('Transaction error:', error);
+        txStatus.textContent = 'Error';
+        
+        if (error.code === 'CALL_EXCEPTION') {
+            showStatus('Transaction failed during execution. Check the explorer for details.', 'error');
+        } else {
+            showStatus(`Transaction error: ${error.message}`, 'error');
+        }
     }
 }
 
@@ -273,6 +358,23 @@ function showStatus(message, type = '') {
 // Event listeners
 connectWalletBtn.addEventListener('click', connectWallet);
 transferForm.addEventListener('submit', transferFunds);
+checkContractBtn.addEventListener('click', checkContract);
+
+// Show contract info when address is entered
+contractAddressInput.addEventListener('change', () => {
+    if (contractAddressInput.value.trim() && ethers.utils.isAddress(contractAddressInput.value.trim())) {
+        contractInfo.classList.remove('hidden');
+    }
+});
+
+// Show/hide custom decimals input
+tokenDecimalsSelect.addEventListener('change', () => {
+    if (tokenDecimalsSelect.value === 'custom') {
+        customDecimalsInput.classList.remove('hidden');
+    } else {
+        customDecimalsInput.classList.add('hidden');
+    }
+});
 
 // Check if wallet is already connected on page load
 window.addEventListener('load', async () => {
