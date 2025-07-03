@@ -35,6 +35,7 @@ const transferForm = document.getElementById('transferForm');
 const contractAddressInput = document.getElementById('contractAddress');
 const recipientAddressInput = document.getElementById('recipientAddress');
 const amountInput = document.getElementById('amount');
+const ethValueInput = document.getElementById('ethValue');
 const statusDiv = document.getElementById('status');
 const txInfo = document.getElementById('txInfo');
 const txHash = document.getElementById('txHash');
@@ -120,6 +121,7 @@ async function transferFunds(e) {
         const contractAddress = contractAddressInput.value.trim();
         const recipientAddress = recipientAddressInput.value.trim();
         const amountInEth = amountInput.value;
+        const ethValueInEth = ethValueInput.value || '0';
 
         // Validate addresses
         if (!ethers.utils.isAddress(contractAddress)) {
@@ -134,34 +136,48 @@ async function transferFunds(e) {
 
         // Convert ETH to Wei
         const amountInWei = ethers.utils.parseEther(amountInEth);
+        const ethValueInWei = ethers.utils.parseEther(ethValueInEth);
 
         // Create contract instance
         contract = new ethers.Contract(contractAddress, FUND_MANAGER_ABI, signer);
 
         showStatus('Preparing transaction...', 'info');
 
-        // Call transferFunds function
-        const tx = await contract.transferFunds(recipientAddress, amountInWei);
-
-        showStatus('Transaction submitted! Waiting for confirmation...', 'info');
-
-        // Show transaction info
-        const explorerUrl = getExplorerUrl(tx.hash);
-        txHash.href = explorerUrl;
-        txHash.textContent = `${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`;
-        txStatus.textContent = 'Pending...';
-        txInfo.classList.remove('hidden');
-
-        // Wait for transaction confirmation
-        const receipt = await tx.wait();
-
-        if (receipt.status === 1) {
-            txStatus.textContent = 'Confirmed ✓';
-            showStatus('Transaction successful!', 'success');
-        } else {
-            txStatus.textContent = 'Failed ✗';
-            showStatus('Transaction failed!', 'error');
+        // Prepare transaction options
+        const txOptions = {};
+        if (ethValueInWei.gt(0)) {
+            txOptions.value = ethValueInWei;
         }
+
+        // Try to estimate gas first to catch errors early
+        try {
+            const gasEstimate = await contract.estimateGas.transferFunds(
+                recipientAddress,
+                amountInWei,
+                txOptions
+            );
+            console.log('Gas estimate:', gasEstimate.toString());
+        } catch (estimateError) {
+            console.error('Gas estimation failed:', estimateError);
+            
+            // Try with manual gas limit
+            showStatus('Gas estimation failed. Trying with manual gas limit...', 'info');
+            
+            txOptions.gasLimit = 300000; // Manual gas limit
+            
+            try {
+                const tx = await contract.transferFunds(recipientAddress, amountInWei, txOptions);
+                await handleTransaction(tx);
+                return;
+            } catch (manualError) {
+                throw manualError;
+            }
+        }
+
+        // Call transferFunds function
+        const tx = await contract.transferFunds(recipientAddress, amountInWei, txOptions);
+        await handleTransaction(tx);
+
 
     } catch (error) {
         console.error('Error transferring funds:', error);
@@ -172,10 +188,44 @@ async function transferFunds(e) {
         } else if (error.code === 'INSUFFICIENT_FUNDS') {
             showStatus('Insufficient funds for transaction', 'error');
         } else if (error.message.includes('execution reverted')) {
-            showStatus('Transaction reverted: Check contract permissions and balance', 'error');
+            showStatus('Transaction reverted: The contract rejected this transaction. Possible reasons: insufficient contract balance, missing permissions, or invalid parameters.', 'error');
+            
+            // Show additional help for common revert reasons
+            const helpMessage = `
+                <br><br>
+                <strong>Common causes:</strong><br>
+                • The contract doesn't have enough funds<br>
+                • You don't have permission to call this function<br>
+                • The function might be paused or disabled<br>
+                • The function might require ETH to be sent with it
+            `;
+            statusDiv.innerHTML = statusDiv.textContent + helpMessage;
         } else {
             showStatus(`Error: ${error.message || 'Unknown error occurred'}`, 'error');
         }
+    }
+}
+
+// Handle transaction submission and confirmation
+async function handleTransaction(tx) {
+    showStatus('Transaction submitted! Waiting for confirmation...', 'info');
+
+    // Show transaction info
+    const explorerUrl = getExplorerUrl(tx.hash);
+    txHash.href = explorerUrl;
+    txHash.textContent = `${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`;
+    txStatus.textContent = 'Pending...';
+    txInfo.classList.remove('hidden');
+
+    // Wait for transaction confirmation
+    const receipt = await tx.wait();
+
+    if (receipt.status === 1) {
+        txStatus.textContent = 'Confirmed ✓';
+        showStatus('Transaction successful!', 'success');
+    } else {
+        txStatus.textContent = 'Failed ✗';
+        showStatus('Transaction failed!', 'error');
     }
 }
 

@@ -32,6 +32,7 @@ A simple web interface for interacting with the FundManager smart contract to tr
    - Enter the FundManager contract address
    - Enter the recipient's address
    - Enter the amount in ETH (or native token)
+   - (Optional) Expand "Advanced Options" to send ETH with the transaction
    - Click "Transfer Funds"
    - Confirm the transaction in MetaMask
 
@@ -67,6 +68,7 @@ interface FundManager {
 - Double-check recipient addresses before sending funds
 - Ensure you're connected to the correct network
 - The `amount` parameter is in Wei (1 ETH = 10^18 Wei)
+- Some contracts may require ETH to be sent with the transaction (use Advanced Options)
 
 ## Technical Details
 
@@ -88,6 +90,8 @@ interface FundManager {
 - Check that the contract has sufficient balance
 - Verify you have permission to call the transferFunds function
 - Ensure the amount doesn't exceed the contract's balance
+- Try sending ETH with the transaction using Advanced Options (some contracts require this)
+- Check if the contract is paused or has other restrictions
 
 ## License
 
