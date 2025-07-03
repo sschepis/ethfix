@@ -48,6 +48,41 @@ const ERC20_ABI = [
     }
 ];
 
+// Common permission check ABIs
+const PERMISSION_ABI = [
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "owner",
+        "outputs": [{"name": "", "type": "address"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [{"name": "account", "type": "address"}],
+        "name": "isAdmin",
+        "outputs": [{"name": "", "type": "bool"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [{"name": "account", "type": "address"}],
+        "name": "hasRole",
+        "outputs": [{"name": "", "type": "bool"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [
+            {"name": "role", "type": "bytes32"},
+            {"name": "account", "type": "address"}
+        ],
+        "name": "hasRole",
+        "outputs": [{"name": "", "type": "bool"}],
+        "type": "function"
+    }
+];
+
 // Global variables
 let provider;
 let signer;
@@ -77,6 +112,11 @@ const tokenAddressInput = document.getElementById('tokenAddress');
 const tokenBalance = document.getElementById('tokenBalance');
 const tokenAllowance = document.getElementById('tokenAllowance');
 const checkTokenBtn = document.getElementById('checkToken');
+const contractOwner = document.getElementById('contractOwner');
+const yourAddress = document.getElementById('yourAddress');
+const hasAdminRole = document.getElementById('hasAdminRole');
+const canTransfer = document.getElementById('canTransfer');
+const checkPermissionsBtn = document.getElementById('checkPermissions');
 
 // Network names mapping
 const networkNames = {
@@ -92,7 +132,9 @@ const networkNames = {
     42161: 'Arbitrum One',
     421613: 'Arbitrum Goerli',
     10: 'Optimism',
-    420: 'Optimism Goerli'
+    420: 'Optimism Goerli',
+    8453: 'Base',
+    84531: 'Base Goerli'
 };
 
 // Connect wallet function
@@ -232,6 +274,122 @@ async function checkTokenInfo() {
     } catch (error) {
         console.error('Error checking token:', error);
         showStatus(`Error checking token: ${error.message}`, 'error');
+    }
+}
+
+// Check user permissions
+async function checkPermissions() {
+    try {
+        const contractAddress = contractAddressInput.value.trim();
+        
+        if (!ethers.utils.isAddress(contractAddress)) {
+            showStatus('Please enter a valid contract address first', 'error');
+            return;
+        }
+        
+        if (!userAddress) {
+            showStatus('Please connect your wallet first', 'error');
+            return;
+        }
+        
+        showStatus('Checking permissions...', 'info');
+        
+        // Create contract instance with permission ABI
+        const permissionContract = new ethers.Contract(contractAddress, PERMISSION_ABI, provider);
+        
+        yourAddress.textContent = `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+        
+        // Try to get owner
+        try {
+            const owner = await permissionContract.owner();
+            contractOwner.textContent = `${owner.slice(0, 6)}...${owner.slice(-4)}`;
+            
+            if (owner.toLowerCase() === userAddress.toLowerCase()) {
+                hasAdminRole.textContent = 'Yes (Owner)';
+                canTransfer.textContent = 'Yes';
+                showStatus('You are the contract owner', 'success');
+                return;
+            }
+        } catch (e) {
+            contractOwner.textContent = 'No owner() function';
+        }
+        
+        // Try various permission check methods
+        let isAuthorized = false;
+        
+        // Check isAdmin
+        try {
+            const adminStatus = await permissionContract.isAdmin(userAddress);
+            if (adminStatus) {
+                hasAdminRole.textContent = 'Yes (Admin)';
+                isAuthorized = true;
+            }
+        } catch (e) {
+            console.log('No isAdmin function');
+        }
+        
+        // Check hasRole with common role hashes
+        if (!isAuthorized) {
+            try {
+                // Common role hashes
+                const ADMIN_ROLE = '0x0000000000000000000000000000000000000000000000000000000000000000';
+                const TRANSFER_ROLE = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('TRANSFER_ROLE'));
+                const OPERATOR_ROLE = ethers.utils.keccak256(ethers.utils.toUtf8Bytes('OPERATOR_ROLE'));
+                
+                // Try admin role
+                try {
+                    const hasAdmin = await permissionContract['hasRole(bytes32,address)'](ADMIN_ROLE, userAddress);
+                    if (hasAdmin) {
+                        hasAdminRole.textContent = 'Yes (DEFAULT_ADMIN_ROLE)';
+                        isAuthorized = true;
+                    }
+                } catch (e) {}
+                
+                // Try transfer role
+                try {
+                    const hasTransfer = await permissionContract['hasRole(bytes32,address)'](TRANSFER_ROLE, userAddress);
+                    if (hasTransfer) {
+                        canTransfer.textContent = 'Yes (TRANSFER_ROLE)';
+                        isAuthorized = true;
+                    }
+                } catch (e) {}
+                
+                // Try operator role
+                try {
+                    const hasOperator = await permissionContract['hasRole(bytes32,address)'](OPERATOR_ROLE, userAddress);
+                    if (hasOperator) {
+                        canTransfer.textContent = 'Yes (OPERATOR_ROLE)';
+                        isAuthorized = true;
+                    }
+                } catch (e) {}
+                
+            } catch (e) {
+                console.log('No hasRole function');
+            }
+        }
+        
+        if (!isAuthorized) {
+            hasAdminRole.textContent = 'No';
+            canTransfer.textContent = 'No';
+            showStatus('Warning: You do not have permission to transfer funds from this contract', 'error');
+            
+            const helpMessage = `
+                <br><br>
+                <strong>Permission Issue Detected:</strong><br>
+                • You are not the contract owner<br>
+                • You don't have admin or transfer roles<br>
+                • Contact the contract owner (${contractOwner.textContent}) to grant permissions<br>
+                • Or use a wallet that has the required permissions
+            `;
+            statusDiv.innerHTML = statusDiv.textContent + helpMessage;
+        } else {
+            canTransfer.textContent = canTransfer.textContent || 'Likely Yes';
+            showStatus('You appear to have permissions', 'success');
+        }
+        
+    } catch (error) {
+        console.error('Error checking permissions:', error);
+        showStatus(`Error checking permissions: ${error.message}`, 'error');
     }
 }
 
@@ -442,6 +600,7 @@ connectWalletBtn.addEventListener('click', connectWallet);
 transferForm.addEventListener('submit', transferFunds);
 checkContractBtn.addEventListener('click', checkContract);
 checkTokenBtn.addEventListener('click', checkTokenInfo);
+checkPermissionsBtn.addEventListener('click', checkPermissions);
 
 // Show contract info when address is entered
 contractAddressInput.addEventListener('change', () => {
@@ -467,6 +626,7 @@ const USDC_ADDRESSES = {
     42161: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', // Arbitrum
     43114: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', // Avalanche
     56: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // BSC
+    8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base
     // Testnets
     5: '0x07865c6E87B9F70255377e024ace6630C1Eaa37F', // Goerli
     80001: '0x0FA8781a83E46826621b3BC094Ea2A0212e71B23', // Mumbai

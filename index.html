@@ -99,6 +99,13 @@
             <div class="contract-info hidden" id="contractInfo">
                 <h3>Contract Info</h3>
                 <p>ETH Balance: <span id="contractBalance">-</span></p>
+                <p>Contract Owner: <span id="contractOwner">-</span></p>
+                <div class="permission-info">
+                    <h4>Permission Check</h4>
+                    <p>Your Address: <span id="yourAddress">-</span></p>
+                    <p>Has Admin Role: <span id="hasAdminRole">-</span></p>
+                    <p>Can Transfer: <span id="canTransfer">-</span></p>
+                </div>
                 <div class="token-info">
                     <p>Token Address (USDC):
                         <input
@@ -107,13 +114,16 @@
                             placeholder="Enter USDC token address"
                             class="form-input"
                             style="margin-top: 5px;"
+                            value="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
                         />
+                        <small>Base USDC: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</small>
                     </p>
                     <p>Token Balance: <span id="tokenBalance">-</span></p>
                     <p>Token Allowance: <span id="tokenAllowance">-</span></p>
                 </div>
                 <button id="checkContract" class="btn btn-secondary">Check Contract</button>
                 <button id="checkToken" class="btn btn-secondary">Check Token Info</button>
+                <button id="checkPermissions" class="btn btn-secondary">Check Permissions</button>
             </div>
 
             <div id="status" class="status-message"></div>
