@@ -98,8 +98,22 @@
 
             <div class="contract-info hidden" id="contractInfo">
                 <h3>Contract Info</h3>
-                <p>Balance: <span id="contractBalance">-</span></p>
+                <p>ETH Balance: <span id="contractBalance">-</span></p>
+                <div class="token-info">
+                    <p>Token Address (USDC):
+                        <input
+                            type="text"
+                            id="tokenAddress"
+                            placeholder="Enter USDC token address"
+                            class="form-input"
+                            style="margin-top: 5px;"
+                        />
+                    </p>
+                    <p>Token Balance: <span id="tokenBalance">-</span></p>
+                    <p>Token Allowance: <span id="tokenAllowance">-</span></p>
+                </div>
                 <button id="checkContract" class="btn btn-secondary">Check Contract</button>
+                <button id="checkToken" class="btn btn-secondary">Check Token Info</button>
             </div>
 
             <div id="status" class="status-message"></div>

@@ -20,6 +20,34 @@ const FUND_MANAGER_ABI = [
     }
 ];
 
+// ERC20 ABI for checking balances and allowances
+const ERC20_ABI = [
+    {
+        "constant": true,
+        "inputs": [{"name": "_owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "balance", "type": "uint256"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [
+            {"name": "_owner", "type": "address"},
+            {"name": "_spender", "type": "address"}
+        ],
+        "name": "allowance",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "type": "function"
+    }
+];
+
 // Global variables
 let provider;
 let signer;
@@ -45,6 +73,10 @@ const txStatus = document.getElementById('txStatus');
 const contractInfo = document.getElementById('contractInfo');
 const contractBalance = document.getElementById('contractBalance');
 const checkContractBtn = document.getElementById('checkContract');
+const tokenAddressInput = document.getElementById('tokenAddress');
+const tokenBalance = document.getElementById('tokenBalance');
+const tokenAllowance = document.getElementById('tokenAllowance');
+const checkTokenBtn = document.getElementById('checkToken');
 
 // Network names mapping
 const networkNames = {
@@ -150,6 +182,56 @@ async function checkContract() {
     } catch (error) {
         console.error('Error checking contract:', error);
         showStatus(`Error checking contract: ${error.message}`, 'error');
+    }
+}
+
+// Check token balance and allowance
+async function checkTokenInfo() {
+    try {
+        const contractAddress = contractAddressInput.value.trim();
+        const tokenAddress = tokenAddressInput.value.trim();
+        
+        if (!ethers.utils.isAddress(contractAddress)) {
+            showStatus('Please enter a valid contract address first', 'error');
+            return;
+        }
+        
+        if (!ethers.utils.isAddress(tokenAddress)) {
+            showStatus('Please enter a valid token address', 'error');
+            return;
+        }
+        
+        showStatus('Checking token info...', 'info');
+        
+        // Create token contract instance
+        const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+        
+        // Get token decimals
+        const decimals = await tokenContract.decimals();
+        console.log('Token decimals:', decimals);
+        
+        // Get contract's token balance
+        const balance = await tokenContract.balanceOf(contractAddress);
+        const balanceFormatted = ethers.utils.formatUnits(balance, decimals);
+        
+        // Get allowance (how much the contract can spend from itself)
+        // This checks if the contract has approved itself to spend tokens
+        const allowance = await tokenContract.allowance(contractAddress, contractAddress);
+        const allowanceFormatted = ethers.utils.formatUnits(allowance, decimals);
+        
+        tokenBalance.textContent = `${balanceFormatted} (${decimals} decimals)`;
+        tokenAllowance.textContent = allowanceFormatted;
+        
+        showStatus('Token info retrieved', 'success');
+        
+        // Add helpful message about allowance
+        if (allowance.eq(0) && balance.gt(0)) {
+            showStatus('Warning: Contract has tokens but no self-allowance. The contract owner may need to approve the contract to spend its own tokens.', 'error');
+        }
+        
+    } catch (error) {
+        console.error('Error checking token:', error);
+        showStatus(`Error checking token: ${error.message}`, 'error');
     }
 }
 
@@ -359,6 +441,7 @@ function showStatus(message, type = '') {
 connectWalletBtn.addEventListener('click', connectWallet);
 transferForm.addEventListener('submit', transferFunds);
 checkContractBtn.addEventListener('click', checkContract);
+checkTokenBtn.addEventListener('click', checkTokenInfo);
 
 // Show contract info when address is entered
 contractAddressInput.addEventListener('change', () => {
@@ -373,6 +456,28 @@ tokenDecimalsSelect.addEventListener('change', () => {
         customDecimalsInput.classList.remove('hidden');
     } else {
         customDecimalsInput.classList.add('hidden');
+    }
+});
+
+// Common USDC addresses for different networks
+const USDC_ADDRESSES = {
+    1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // Ethereum Mainnet
+    137: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // Polygon
+    10: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', // Optimism
+    42161: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', // Arbitrum
+    43114: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', // Avalanche
+    56: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // BSC
+    // Testnets
+    5: '0x07865c6E87B9F70255377e024ace6630C1Eaa37F', // Goerli
+    80001: '0x0FA8781a83E46826621b3BC094Ea2A0212e71B23', // Mumbai
+    11155111: '0x6f14C02Fc1F78322cFd7d707aB90f18baD3B54f5', // Sepolia
+};
+
+// Auto-fill USDC address based on network
+provider && provider.getNetwork().then(network => {
+    const usdcAddress = USDC_ADDRESSES[network.chainId];
+    if (usdcAddress && !tokenAddressInput.value) {
+        tokenAddressInput.value = usdcAddress;
     }
 });
 

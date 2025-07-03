@@ -56,6 +56,26 @@ interface FundManager {
 }
 ```
 
+## Important: USDC Approval Mechanism
+
+When transferring USDC (or any ERC20 token), the FundManager contract needs approval to spend tokens. There are two common patterns:
+
+1. **Contract holds and transfers its own tokens** (most common):
+   - The contract holds USDC in its own balance
+   - The contract owner must approve the contract to spend its own USDC
+   - Users simply call `transferFunds` to trigger transfers
+
+2. **Contract transfers from user wallets** (less common):
+   - Users would need to approve the contract first
+   - This pattern typically requires a different function signature
+
+**To check if the contract has proper approvals:**
+1. Enter the contract address
+2. Enter the USDC token address (auto-filled for common networks)
+3. Click "Check Token Info" to see:
+   - Contract's USDC balance
+   - Contract's self-allowance (if applicable)
+
 ## Supported Networks
 
 - Ethereum Mainnet & Testnets (Goerli, Sepolia)
@@ -92,14 +112,19 @@ interface FundManager {
 - Verify the contract is deployed on the selected network
 
 **"Transaction reverted"**
-- Check that the contract has sufficient USDC/token balance
+- Use "Check Token Info" to verify the contract has USDC balance
 - Verify you have permission to call the transferFunds function
 - **Ensure you selected the correct decimals (USDC = 6)**
 - Ensure the amount doesn't exceed the contract's balance
-- The contract needs approval to spend USDC (set by contract owner)
+- The contract may need approval to spend USDC (set by contract owner)
 - Try sending ETH with the transaction using Advanced Options (some contracts require this)
 - Check if the contract is paused or has other restrictions
-- The recipient might be blacklisted on the token contract
+- The recipient might be blacklisted on the USDC contract
+
+**"Gas estimation failed"**
+- The transaction will fail if executed
+- Check all the points above
+- The contract might not have the required approvals
 
 ## License
 
